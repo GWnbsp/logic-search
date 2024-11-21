@@ -15,7 +15,8 @@ export class QueryEvaluator {
                 category: 1.0,
                 brand: 1.0,
                 specs: 1.0,
-                price: 1.0
+                price: 1.0,
+                ...options.weights
             },
             ...options
         };
@@ -26,347 +27,212 @@ export class QueryEvaluator {
         this.wildcardMatcher = new WildcardMatcher(this.options);
     }
 
-    evaluate(ast, item) {
-        if (!ast) return { match: false, score: 0 };
+    evaluateQuery(doc, query) {
+        if (!query) {
+            return { match: false, score: 0 };
+        }
 
-        switch (ast.type) {
-            case TokenType.AND:
-                const leftAnd = this.evaluate(ast.left, item);
-                // 如果左边不匹配，直接返回，避免不必要的计算
-                if (!leftAnd.match) {
-                    return { match: false, score: 0 };
-                }
-                const rightAnd = this.evaluate(ast.right, item);
+        const result = this.evaluateNode(doc, query);
+
+        // 处理特殊组合查询
+        if (query.type === TokenType.AND) {
+            // 对于评分和价格范围的组合查询，增加权重
+            const isRatingQuery = this.isFieldQuery(query.left, 'rating') || this.isFieldQuery(query.right, 'rating');
+            const isPriceQuery = this.isFieldQuery(query.left, 'priceRange') || this.isFieldQuery(query.right, 'priceRange');
+
+            if (isRatingQuery && isPriceQuery) {
+                result.score *= 1.2; // 提高组合查询的权重
+            }
+        }
+
+        return result;
+    }
+
+    evaluateNode(doc, node) {
+        if (!node) return { match: false, score: 0 };
+
+        switch (node.type) {
+            case TokenType.AND: {
+                const left = this.evaluateNode(doc, node.left);
+                if (!left.match) return { match: false, score: 0 };
+                const right = this.evaluateNode(doc, node.right);
                 return {
-                    match: leftAnd.match && rightAnd.match,
-                    score: rightAnd.match ? (leftAnd.score + rightAnd.score) / 2 : 0
+                    match: left.match && right.match,
+                    score: (left.score + right.score) / 2
                 };
+            }
 
-            case TokenType.OR:
-                const leftOr = this.evaluate(ast.left, item);
-                // 如果左边匹配，直接返回，避免不必要的计算
-                if (leftOr.match) {
-                    return { match: true, score: leftOr.score };
-                }
-                const rightOr = this.evaluate(ast.right, item);
+            case TokenType.OR: {
+                const left = this.evaluateNode(doc, node.left);
+                const right = this.evaluateNode(doc, node.right);
                 return {
-                    match: leftOr.match || rightOr.match,
-                    score: Math.max(leftOr.score, rightOr.score)
+                    match: left.match || right.match,
+                    score: Math.max(left.score, right.score)
                 };
+            }
 
-            case TokenType.NOT:
-                if (ast.expression.type === TokenType.FIELD) {
-                    const field = ast.expression.value.field;
-                    const term = ast.expression.value.term;
-                    const fieldValue = this.getFieldValue(item, field);
-
-                    // 如果字段不存在，NOT 条件为真
-                    if (fieldValue === undefined) {
-                        return { match: true, score: 1 };
-                    }
-
-                    // 使用精确匹配器检查字段值
-                    const result = this.exactMatcher.match(String(fieldValue), term);
-
-                    // 反转匹配结果
-                    return {
-                        match: !result.match,
-                        score: result.match ? 0 : 1
-                    };
-                }
-
-                // 处理其他类型的 NOT 操作
-                const notResult = this.evaluate(ast.expression, item);
+            case TokenType.NOT: {
+                const result = this.evaluateNode(doc, node.operand);
                 return {
-                    match: !notResult.match,
-                    score: notResult.match ? 0 : 1
+                    match: !result.match,
+                    score: result.match ? 0 : 1
                 };
+            }
 
-            case TokenType.FIELD:
-                return this.evaluateField(item, ast.value.field, ast.value.term);
+            case TokenType.FIELD: {
+                const result = this.evaluateField(doc, node.field, node.operator, node.value);
+                const weight = this.options.weights[node.field] || 1;
+                return {
+                    match: result.match,
+                    score: result.score * weight
+                };
+            }
 
-            case TokenType.TERM:
-                return this.evaluateTerm(item, ast.value);
-
-            case TokenType.FUZZY:
-                return this.evaluateFuzzy(item, ast.value.term, ast.value.distance);
-
-            case TokenType.WILDCARD:
-                return this.evaluateWildcard(item, ast.value);
-
-            case TokenType.RANGE:
-                return this.evaluateRange(item, ast.value.field, ast.value);
+            case TokenType.TEXT: {
+                return this.evaluateText(doc, node.value);
+            }
 
             default:
-                throw new Error(`Unknown AST node type: ${ast.type}`);
+                throw new Error(`Unknown node type: ${node.type}`);
         }
     }
 
-    evaluateTerm(item, term) {
-        let maxScore = 0;
-        let matched = false;
-
-        // 遍历所有字段
-        for (const [field, weight] of Object.entries(this.options.weights)) {
-            const fieldValue = this.getFieldValue(item, field);
-            if (fieldValue !== undefined) {
-                const matchResult = this.exactMatcher.match(String(fieldValue), term);
-                if (matchResult.match) {
-                    matched = true;
-                    maxScore = Math.max(maxScore, matchResult.score * weight);
-                }
-            }
-        }
-
-        return { match: matched, score: maxScore };
+    isFieldQuery(node, fieldName) {
+        return node && node.type === TokenType.FIELD && node.field === fieldName;
     }
 
-    evaluateField(item, field, term) {
-        const fieldValue = this.getFieldValue(item, field);
+    evaluateField(doc, field, operator, value) {
+        const fieldValue = this.getFieldValue(doc, field);
 
-        // 如果字段不存在
+        // 处理字段不存在的情况
         if (fieldValue === undefined) {
-            return { match: false, score: 0 };
+            return { match: operator === 'NOT', score: 0 };
         }
 
-        // 处理数值比较
-        if (typeof fieldValue === 'number') {
-            // 处理大于等于
-            if (term.startsWith('>=')) {
-                const compareValue = parseFloat(term.slice(2));
-                return {
-                    match: fieldValue >= compareValue,
-                    score: fieldValue >= compareValue ? Math.min(1, (fieldValue - compareValue) / compareValue) : 0
-                };
-            }
-            // 处理小于等于
-            if (term.startsWith('<=')) {
-                const compareValue = parseFloat(term.slice(2));
-                return {
-                    match: fieldValue <= compareValue,
-                    score: fieldValue <= compareValue ? Math.min(1, (compareValue - fieldValue) / compareValue) : 0
-                };
-            }
-            // 处理大于
-            if (term.startsWith('>')) {
-                const compareValue = parseFloat(term.slice(1));
-                return {
-                    match: fieldValue > compareValue,
-                    score: fieldValue > compareValue ? Math.min(1, (fieldValue - compareValue) / compareValue) : 0
-                };
-            }
-            // 处理小于
-            if (term.startsWith('<')) {
-                const compareValue = parseFloat(term.slice(1));
-                return {
-                    match: fieldValue < compareValue,
-                    score: fieldValue < compareValue ? Math.min(1, (compareValue - fieldValue) / compareValue) : 0
-                };
-            }
-            // 处理等于
-            if (term.startsWith('=')) {
-                const compareValue = parseFloat(term.slice(1));
-                return {
-                    match: fieldValue === compareValue,
-                    score: fieldValue === compareValue ? 1 : 0
-                };
-            }
-            // 如果是纯数字，默认为等于比较
-            if (!isNaN(term)) {
-                const compareValue = parseFloat(term);
-                return {
-                    match: fieldValue === compareValue,
-                    score: fieldValue === compareValue ? 1 : 0
-                };
-            }
-        }
-
-        // 处理数组字段（如tags）
+        // 处理数组字段
         if (Array.isArray(fieldValue)) {
-            let maxScore = 0;
-            let matched = false;
-            for (const value of fieldValue) {
-                const result = this.exactMatcher.match(String(value), term);
-                if (result.match) {
-                    matched = true;
-                    maxScore = Math.max(maxScore, result.score);
-                }
+            // 对于数组字段，任一元素匹配即可
+            for (const item of fieldValue) {
+                const result = this.compareValues(item, operator, value);
+                if (result.match) return result;
             }
-            return {
-                match: matched,
-                score: maxScore * (this.options.weights[field] || 1)
-            };
-        }
-
-        // 处理对象字段（如specs）
-        if (typeof fieldValue === 'object' && fieldValue !== null) {
-            let maxScore = 0;
-            let matched = false;
-            for (const value of Object.values(fieldValue)) {
-                const result = this.exactMatcher.match(String(value), term);
-                if (result.match) {
-                    matched = true;
-                    maxScore = Math.max(maxScore, result.score);
-                }
-            }
-            return {
-                match: matched,
-                score: maxScore * (this.options.weights[field] || 1)
-            };
-        }
-
-        // 普通字段匹配
-        const result = this.exactMatcher.match(String(fieldValue), term);
-        return {
-            match: result.match,
-            score: result.match ? result.score * (this.options.weights[field] || 1) : 0
-        };
-    }
-
-    evaluateFuzzy(item, term, maxDistance) {
-        let maxScore = 0;
-        let matched = false;
-
-        // 遍历所有字段
-        for (const [field, weight] of Object.entries(this.options.weights)) {
-            const fieldValue = this.getFieldValue(item, field);
-            if (fieldValue === undefined) continue;
-
-            if (Array.isArray(fieldValue)) {
-                // 处理数组字段
-                for (const value of fieldValue) {
-                    const result = this.fuzzyMatcher.match(String(value), term, maxDistance);
-                    if (result.match) {
-                        matched = true;
-                        maxScore = Math.max(maxScore, result.score * weight);
-                    }
-                }
-            } else if (typeof fieldValue === 'object' && fieldValue !== null) {
-                // 处理对象字段
-                for (const value of Object.values(fieldValue)) {
-                    const result = this.fuzzyMatcher.match(String(value), term, maxDistance);
-                    if (result.match) {
-                        matched = true;
-                        maxScore = Math.max(maxScore, result.score * weight);
-                    }
-                }
-            } else {
-                // 处理普通字段
-                const result = this.fuzzyMatcher.match(String(fieldValue), term, maxDistance);
-                if (result.match) {
-                    matched = true;
-                    maxScore = Math.max(maxScore, result.score * weight);
-                }
-            }
-        }
-
-        return { match: matched, score: maxScore };
-    }
-
-    evaluateWildcard(item, pattern) {
-        let maxScore = 0;
-        let matched = false;
-
-        // 遍历所有字段
-        for (const [field, weight] of Object.entries(this.options.weights)) {
-            const fieldValue = this.getFieldValue(item, field);
-            if (fieldValue === undefined) continue;
-
-            // 处理数组字段
-            if (Array.isArray(fieldValue)) {
-                for (const value of fieldValue) {
-                    const result = this.wildcardMatcher.match(String(value).toLowerCase(), pattern.toLowerCase());
-                    if (result.match) {
-                        matched = true;
-                        maxScore = Math.max(maxScore, result.score * weight);
-                    }
-                }
-                continue;
-            }
-
-            // 处理对象字段
-            if (typeof fieldValue === 'object' && fieldValue !== null) {
-                for (const value of Object.values(fieldValue)) {
-                    const result = this.wildcardMatcher.match(String(value).toLowerCase(), pattern.toLowerCase());
-                    if (result.match) {
-                        matched = true;
-                        maxScore = Math.max(maxScore, result.score * weight);
-                    }
-                }
-                continue;
-            }
-
-            // 处理普通字段
-            const result = this.wildcardMatcher.match(String(fieldValue).toLowerCase(), pattern.toLowerCase());
-            if (result.match) {
-                matched = true;
-                maxScore = Math.max(maxScore, result.score * weight);
-            }
-        }
-
-        return { match: matched, score: maxScore };
-    }
-
-    evaluateRange(item, field, term) {
-        const fieldValue = this.getFieldValue(item, field);
-        if (fieldValue === undefined || typeof fieldValue !== 'number') {
             return { match: false, score: 0 };
         }
 
-        // 解析范围表达式
-        const [min, max] = term.split(',').map(v => parseFloat(v.trim()));
-        const match = (isNaN(min) || fieldValue >= min) && (isNaN(max) || fieldValue <= max);
-
-        // 计算分数：值越接近范围中心，分数越高
-        let score = 0;
-        if (match) {
-            if (!isNaN(min) && !isNaN(max)) {
-                const center = (min + max) / 2;
-                const range = max - min;
-                score = 1 - Math.abs(fieldValue - center) / range;
-            } else if (!isNaN(min)) {
-                score = Math.min(1, (fieldValue - min) / min);
-            } else if (!isNaN(max)) {
-                score = Math.min(1, (max - fieldValue) / max);
-            }
-        }
-
-        return {
-            match,
-            score: score * (this.options.weights[field] || 1)
-        };
+        return this.compareValues(fieldValue, operator, value);
     }
 
-    getFieldValue(item, field) {
-        // 处理嵌套字段，如 specs.camera
-        const parts = field.toLowerCase().split('.');
-        let value = item;
+    getFieldValue(obj, field) {
+        const parts = field.split('.');
+        let value = obj;
 
         for (const part of parts) {
-            if (value === undefined || value === null) return undefined;
+            if (value === null || value === undefined) {
+                return undefined;
+            }
 
-            // 特殊处理：如果当前值是数组，尝试在每个元素中查找
+            // 处理数组字段
             if (Array.isArray(value)) {
-                const arrayResults = value.map(v => this.getFieldValue(v, part)).filter(v => v !== undefined);
-                return arrayResults.length > 0 ? arrayResults : undefined;
+                // 如果是数组，搜索所有元素
+                const results = value.map(item => {
+                    if (typeof item === 'object' && item !== null) {
+                        return this.getFieldValue(item, part);
+                    }
+                    return item;
+                }).filter(v => v !== undefined);
+
+                // 如果找到任何匹配，返回第一个
+                return results.length > 0 ? results[0] : undefined;
             }
 
-            // 对象字段查找：不区分大小写
-            if (typeof value === 'object') {
-                const key = Object.keys(value).find(k => k.toLowerCase() === part);
-                value = key ? value[key] : undefined;
-            } else {
-                value = undefined;
-            }
+            value = value[part];
         }
 
         return value;
     }
 
-    setOptions(options) {
-        this.options = {
-            ...this.options,
-            ...options
-        };
+    compareValues(fieldValue, operator, value) {
+        // 处理 null 和 undefined
+        if (fieldValue === null || fieldValue === undefined) {
+            return { match: operator === 'NOT', score: 0 };
+        }
+
+        // 处理数值比较
+        const numericValue = this.extractNumber(value);
+        const numericFieldValue = this.extractNumber(fieldValue);
+
+        if (numericValue !== null && numericFieldValue !== null) {
+            switch (operator) {
+                case '>': return { match: numericFieldValue > numericValue, score: 1 };
+                case '>=': return { match: numericFieldValue >= numericValue, score: 1 };
+                case '<': return { match: numericFieldValue < numericValue, score: 1 };
+                case '<=': return { match: numericFieldValue <= numericValue, score: 1 };
+                case '=': return { match: numericFieldValue === numericValue, score: 1 };
+                case 'NOT': return { match: numericFieldValue !== numericValue, score: 1 };
+            }
+        }
+
+        // 字符串比较
+        const strFieldValue = String(fieldValue);
+        const strValue = String(value);
+
+        // 处理价格等级比较
+        if (fieldValue.startsWith('￥') && value.startsWith('￥')) {
+            const fieldLevel = fieldValue.length;
+            const valueLevel = value.length;
+            return {
+                match: operator === '>=' ? fieldLevel >= valueLevel :
+                    operator === '>' ? fieldLevel > valueLevel :
+                        operator === '<=' ? fieldLevel <= valueLevel :
+                            operator === '<' ? fieldLevel < valueLevel :
+                                operator === '=' ? fieldLevel === valueLevel :
+                                    operator === 'NOT' ? fieldLevel !== valueLevel : false,
+                score: 1
+            };
+        }
+
+        switch (operator) {
+            case '=':
+                return {
+                    match: this.exactMatcher.matches(strFieldValue, strValue),
+                    score: 1
+                };
+            case 'NOT':
+                return {
+                    match: !this.exactMatcher.matches(strFieldValue, strValue),
+                    score: 1
+                };
+            case 'WILDCARD':
+                return {
+                    match: this.wildcardMatcher.matches(strFieldValue, strValue),
+                    score: 0.8
+                };
+            case 'FUZZY':
+                const score = this.fuzzyMatcher.similarity(strFieldValue, strValue);
+                return {
+                    match: score >= this.options.fuzzyThreshold,
+                    score: score
+                };
+            default:
+                return { match: false, score: 0 };
+        }
+    }
+
+    extractNumber(value) {
+        if (typeof value === 'number') return value;
+        if (typeof value !== 'string') return null;
+
+        // 提取字符串中的数字部分
+        const match = value.match(/[\d.]+/);
+        return match ? parseFloat(match[0]) : null;
+    }
+
+    evaluateText(item, value) {
+        // 在所有字段中搜索文本
+        for (const field in item) {
+            const result = this.evaluateField(item, field, '=', value);
+            if (result.match) return result;
+        }
+        return { match: false, score: 0 };
     }
 }

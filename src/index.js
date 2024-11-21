@@ -25,15 +25,15 @@ export class LogicSearch {
 
             // 评估每个文档
             const results = this.data
-                .map(item => ({
-                    item,
-                    evaluation: this.evaluator.evaluate(ast, item)
+                .map(doc => ({
+                    doc,
+                    result: this.evaluator.evaluateQuery(doc, ast)
                 }))
-                .filter(result => result.evaluation.match)
-                .sort((a, b) => b.evaluation.score - a.evaluation.score)
-                .map(result => ({
-                    ...result.item,
-                    _score: result.evaluation.score  // 可选：添加分数信息
+                .filter(result => result.result.match)
+                .sort((a, b) => b.result.score - a.result.score)
+                .map(({ doc, result }) => ({
+                    ...doc,
+                    _score: result.score
                 }));
 
             return results;
@@ -74,4 +74,3 @@ export { QueryEvaluator } from './evaluator.js';
 export { ExactMatcher } from '../matchers/exact.js';
 export { FuzzyMatcher } from '../matchers/fuzzy.js';
 export { WildcardMatcher } from '../matchers/wildcard.js';
-
