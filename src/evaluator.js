@@ -55,38 +55,50 @@ export class QueryEvaluator {
                 };
 
             case TokenType.NOT:
+                if (ast.expression.type === TokenType.FIELD) {
+                    const field = ast.expression.value.field;
+                    const term = ast.expression.value.term;
+                    const fieldValue = this.getFieldValue(item, field);
+
+                    // 如果字段不存在，NOT 条件为真
+                    if (fieldValue === undefined) {
+                        return { match: true, score: 1 };
+                    }
+
+                    // 使用精确匹配器检查字段值
+                    const result = this.exactMatcher.match(String(fieldValue), term);
+
+                    // 反转匹配结果
+                    return {
+                        match: !result.match,
+                        score: result.match ? 0 : 1
+                    };
+                }
+
+                // 处理其他类型的 NOT 操作
                 const notResult = this.evaluate(ast.expression, item);
                 return {
                     match: !notResult.match,
                     score: notResult.match ? 0 : 1
                 };
 
+            case TokenType.FIELD:
+                return this.evaluateField(item, ast.value.field, ast.value.term);
+
             case TokenType.TERM:
                 return this.evaluateTerm(item, ast.value);
 
-            case TokenType.FIELD:
-                if (!ast.value || !ast.value.field) {
-                    return { match: false, score: 0 };
-                }
-                return this.evaluateField(item, ast.value.field, ast.value.term);
-
             case TokenType.FUZZY:
-                if (!ast.value || !ast.value.term) {
-                    return { match: false, score: 0 };
-                }
                 return this.evaluateFuzzy(item, ast.value.term, ast.value.distance);
 
             case TokenType.WILDCARD:
                 return this.evaluateWildcard(item, ast.value);
 
             case TokenType.RANGE:
-                if (!ast.value || !ast.value.field) {
-                    return { match: false, score: 0 };
-                }
-                return this.evaluateRange(item, ast.value.field, ast.value.term);
+                return this.evaluateRange(item, ast.value.field, ast.value);
 
             default:
-                return { match: false, score: 0 };
+                throw new Error(`Unknown AST node type: ${ast.type}`);
         }
     }
 
@@ -111,6 +123,8 @@ export class QueryEvaluator {
 
     evaluateField(item, field, term) {
         const fieldValue = this.getFieldValue(item, field);
+
+        // 如果字段不存在
         if (fieldValue === undefined) {
             return { match: false, score: 0 };
         }
@@ -172,34 +186,40 @@ export class QueryEvaluator {
             let maxScore = 0;
             let matched = false;
             for (const value of fieldValue) {
-                const result = this.exactMatcher.match(String(value).toLowerCase(), term.toLowerCase());
+                const result = this.exactMatcher.match(String(value), term);
                 if (result.match) {
                     matched = true;
                     maxScore = Math.max(maxScore, result.score);
                 }
             }
-            return { match: matched, score: maxScore * (this.options.weights[field] || 1) };
+            return {
+                match: matched,
+                score: maxScore * (this.options.weights[field] || 1)
+            };
         }
 
         // 处理对象字段（如specs）
         if (typeof fieldValue === 'object' && fieldValue !== null) {
             let maxScore = 0;
             let matched = false;
-            for (const [key, value] of Object.entries(fieldValue)) {
-                const result = this.exactMatcher.match(String(value).toLowerCase(), term.toLowerCase());
+            for (const value of Object.values(fieldValue)) {
+                const result = this.exactMatcher.match(String(value), term);
                 if (result.match) {
                     matched = true;
                     maxScore = Math.max(maxScore, result.score);
                 }
             }
-            return { match: matched, score: maxScore * (this.options.weights[field] || 1) };
+            return {
+                match: matched,
+                score: maxScore * (this.options.weights[field] || 1)
+            };
         }
 
         // 普通字段匹配
-        const result = this.exactMatcher.match(String(fieldValue).toLowerCase(), term.toLowerCase());
+        const result = this.exactMatcher.match(String(fieldValue), term);
         return {
             match: result.match,
-            score: result.score * (this.options.weights[field] || 1)
+            score: result.match ? result.score * (this.options.weights[field] || 1) : 0
         };
     }
 

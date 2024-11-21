@@ -106,11 +106,17 @@ export class QueryParser {
     }
 
     addToken(tokens, value, position) {
-        const upperValue = value.toUpperCase();
+        // 检查是否为 NOT 操作符
+        if (value.startsWith('!')) {
+            tokens.push(new Token(TokenType.NOT, null, position - value.length, position));
+            // 处理剩余部分
+            this.addToken(tokens, value.slice(1), position);
+            return;
+        }
 
-        // 检查是否为操作符
-        if (this.operators[upperValue]) {
-            tokens.push(new Token(this.operators[upperValue], value, position - value.length, position));
+        // 检查是否为 NOT 关键字
+        if (value.toUpperCase() === 'NOT') {
+            tokens.push(new Token(TokenType.NOT, null, position - value.length, position));
             return;
         }
 
@@ -144,6 +150,13 @@ export class QueryParser {
                 field: field.trim(),
                 term: term.trim()
             }, position - value.length, position));
+            return;
+        }
+
+        // 检查是否为其他操作符
+        const upperValue = value.toUpperCase();
+        if (this.operators[upperValue] && upperValue !== 'NOT') {
+            tokens.push(new Token(this.operators[upperValue], value, position - value.length, position));
             return;
         }
 
@@ -200,13 +213,9 @@ export class QueryParser {
         };
 
         const parsePrimary = () => {
-            if (position >= tokens.length) {
-                throw new Error('Unexpected end of input');
-            }
-
             const token = tokens[position];
 
-            // 处理NOT操作符
+            // 处理 NOT 操作符
             if (token.type === TokenType.NOT) {
                 position++;
                 const expression = parsePrimary();
@@ -218,7 +227,7 @@ export class QueryParser {
                 };
             }
 
-            // 处理括号表达式
+            // 处理括号
             if (token.type === TokenType.LPAREN) {
                 position++;
                 const expression = parseExpression();
@@ -227,31 +236,15 @@ export class QueryParser {
                     throw new Error('Missing closing parenthesis');
                 }
 
-                const rparen = tokens[position];
                 position++;
-
-                return {
-                    ...expression,
-                    start: token.start,
-                    end: rparen.end
-                };
+                return expression;
             }
 
             // 处理其他类型的token
             position++;
-            return {
-                type: token.type,
-                value: token.value,
-                start: token.start,
-                end: token.end
-            };
+            return token;
         };
 
-        try {
-            return parseExpression();
-        } catch (error) {
-            console.error('解析错误:', error.message);
-            return null;
-        }
+        return parseExpression();
     }
 }

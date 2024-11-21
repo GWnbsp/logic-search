@@ -1,41 +1,55 @@
-# LogicSearch 高级搜索引擎
+# LogicSearch
 
-一个强大而灵活的 JavaScript 搜索引擎，支持复杂的逻辑查询操作。
+一个功能强大的 JavaScript 搜索引擎，支持复杂的布尔逻辑查询、字段搜索、数值比较、通配符和模糊匹配。
 
-## ✨ 特性
+## 特性
 
-- 🔍 支持复杂的布尔逻辑操作（AND、OR、NOT）
-- 字段特定搜索（field:value）
-- 🔢 数值比较（>、<、>=、<=、=）
-- � 通配符匹配（\*）
-- 📝 模糊搜索（~N）
-- 🎯 可配置的字段权重
-- 🌐 多语言支持
-- ⚡ 高性能内存搜索
+- 🔍 支持复杂的布尔逻辑查询（AND、OR、NOT）
+- 📊 字段特定搜索（field:value）
+- 📈 数值比较（>、>=、<、<=、=）
+- 🌟 通配符匹配（\*）
+- 🎯 模糊搜索（~N）
+- ⚖️ 可配置的字段权重
+- 🎨 灵活的评分系统
 
-## 🚀 快速开始
-
-### 安装
+## 安装
 
 ```bash
 npm install logic-search
-# 或
-yarn add logic-search
 ```
 
-### 基本使用
+## 快速开始
 
 ```javascript
 import { LogicSearch } from "logic-search";
 
+// 准备数据
+const products = [
+  {
+    id: 1,
+    name: "华为 Mate 60 Pro",
+    category: "手机",
+    brand: "华为",
+    price: 6999,
+  },
+  {
+    id: 2,
+    name: "华硕 ROG 游戏本",
+    category: "笔记本",
+    brand: "华硕",
+    price: 25999,
+  },
+];
+
 // 创建搜索引擎实例
-const searchEngine = new LogicSearch(data, {
+const searchEngine = new LogicSearch(products, {
   caseSensitive: false,
   fuzzyThreshold: 0.8,
   weights: {
     name: 2.0,
-    description: 1.5,
     category: 1.0,
+    brand: 1.0,
+    price: 1.0,
   },
 });
 
@@ -43,89 +57,102 @@ const searchEngine = new LogicSearch(data, {
 const results = searchEngine.search(
   "(category:手机 OR category:笔记本) AND price:>5000"
 );
+console.log(results);
 ```
 
-## � 查询语法
+## 查询语法
 
-### 基础搜索
+### 布尔操作符
 
-- 单个词：`手机`
-- 精确短语：`"无线充电"`
+- `AND`（或 `&&`）：与操作
+- `OR`（或 `||`）：或操作
+- `NOT`（或 `!`）：非操作
 
 ### 字段搜索
 
-- 特定字段：`category:手机`
-- 数值比较：`price:>5000`
-- 嵌套字段：`specs.camera:5000万`
+- 基本语法：`field:value`
+- 数值比较：`price:>5000`, `price:<=1000`
+- 否定：`!brand:苹果`
 
-### 布尔操作
-
-- AND：`手机 AND 5G`
-- OR：`小米 OR 华为`
-- NOT：`!苹果` 或 `NOT 苹果`
-
-### 高级功能
-
-- 通配符：`华为*` 或 `*Pro`
-- 模糊搜索：`游戏~1`
-- 组合查询：`((category:手机 OR category:笔记本) AND price:>5000) AND !brand:苹果`
-
-## ⚙️ 配置选项
+### 示例查询
 
 ```javascript
-{
-    // 是否区分大小写
-    caseSensitive: false,
+// 基础查询
+searchEngine.search("category:手机");
 
-    // 模糊搜索阈值 (0-1)
-    fuzzyThreshold: 0.8,
+// 价格范围
+searchEngine.search("price:>5000");
 
-    // 搜索字段
-    fields: ['name', 'description', 'category', 'brand', 'tags', 'specs'],
+// 复杂逻辑
+searchEngine.search(
+  "((category:手机 OR category:笔记本) AND price:>5000) AND !brand:苹果"
+);
+```
 
+## 配置选项
+
+```javascript
+const options = {
+  caseSensitive: false, // 是否区分大小写
+  fuzzyThreshold: 0.8, // 模糊匹配阈值
+  weights: {
     // 字段权重
-    weights: {
-        name: 2.0,
-        description: 1.5,
-        tags: 1.2,
-        category: 1.0,
-        brand: 1.0,
-        specs: 1.0,
-        price: 1.0
-    }
-}
+    name: 2.0,
+    category: 1.0,
+    brand: 1.0,
+    price: 1.0,
+  },
+};
 ```
 
-## 🧪 示例
+## API 参考
+
+### LogicSearch 类
+
+#### 构造函数
 
 ```javascript
-// 基础搜索
-searchEngine.search("手机");
-
-// 字段搜索
-searchEngine.search("category:手机 AND price:>5000");
-
-// 复杂查询
-searchEngine.search("(brand:小米 OR brand:华为) AND (tags:5G OR tags:快充)");
-
-// 通配符搜索
-searchEngine.search("华为*");
-
-// 模糊搜索
-searchEngine.search("游戏~1");
+new LogicSearch((data = []), (options = {}));
 ```
 
-## � 依赖
+#### 方法
 
-- Node.js >= 14.0.0
-- ES Modules
-- leven (编辑距离计算)
-- fuse.js (高级模糊搜索，可选)
+- `search(query)`: 执行搜索查询
+- `addDocument(doc)`: 添加文档到搜索引擎
+- `removeDocument(id)`: 移除指定 ID 的文档
+- `setOptions(options)`: 更新搜索引擎配置
 
-## 🤝 贡献
+## 高级用法
 
-欢迎提交 Issue 和 Pull Request！
+### 自定义评分
 
-## � 许可
+搜索结果会包含 `_score` 字段，表示匹配程度：
 
-MIT License
+```javascript
+const results = searchEngine.search("category:手机");
+// 结果示例：
+// {
+//     id: 1,
+//     name: "华为 Mate 60 Pro",
+//     category: "手机",
+//     _score: 1.0
+// }
+```
+
+### 字段权重配置
+
+可以通过配置不同字段的权重来调整搜索结果的排序：
+
+```javascript
+const searchEngine = new LogicSearch(data, {
+  weights: {
+    name: 2.0, // 名称字段权重加倍
+    category: 1.0,
+    brand: 1.0,
+  },
+});
+```
+
+## 许可证
+
+MIT
