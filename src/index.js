@@ -9,7 +9,7 @@ export class LogicSearch {
             fuzzyThreshold: 0.8,
             fields: null,
             weights: null,
-            ...options
+            ...options,
         };
 
         this.parser = new QueryParser();
@@ -25,15 +25,15 @@ export class LogicSearch {
 
             // 评估每个文档
             const results = this.data
-                .map(doc => ({
+                .map((doc) => ({
                     doc,
-                    result: this.evaluator.evaluateQuery(doc, ast)
+                    result: this.evaluator.evaluateQuery(doc, ast),
                 }))
-                .filter(result => result.result.match)
+                .filter((result) => result.result.match)
                 .sort((a, b) => b.result.score - a.result.score)
                 .map(({ doc, result }) => ({
                     ...doc,
-                    _score: result.score
+                    _score: result.score,
                 }));
 
             return results;
@@ -48,8 +48,8 @@ export class LogicSearch {
     }
 
     removeDocument(id) {
-        const index = this.data.findIndex(doc =>
-            doc.id === id || doc._id === id || doc.uid === id
+        const index = this.data.findIndex(
+            (doc) => doc.id === id || doc._id === id || doc.uid === id
         );
 
         if (index !== -1) {
@@ -62,7 +62,7 @@ export class LogicSearch {
     setOptions(options) {
         this.options = {
             ...this.options,
-            ...options
+            ...options,
         };
         this.evaluator.setOptions(this.options);
     }

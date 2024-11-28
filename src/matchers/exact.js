@@ -2,7 +2,7 @@ export class ExactMatcher {
     constructor(options = {}) {
         this.options = {
             caseSensitive: false,
-            ...options
+            ...options,
         };
     }
 

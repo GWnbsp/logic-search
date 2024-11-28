@@ -5,24 +5,14 @@ export const TokenType = {
     AND: 'AND',
     OR: 'OR',
     NOT: 'NOT',
-    PARENTHESIS: 'PARENTHESIS'
+    PARENTHESIS: 'PARENTHESIS',
 };
-
-// Token class for representing lexical tokens
-class Token {
-    constructor(type, value, start = 0, end = 0) {
-        this.type = type;
-        this.value = value;
-        this.start = start;
-        this.end = end;
-    }
-}
 
 class Parser {
     constructor(options = {}) {
         this.options = {
             caseSensitive: false,
-            ...options
+            ...options,
         };
     }
 
@@ -73,7 +63,7 @@ class Parser {
         // 处理字段查询
         if (token.includes(':')) {
             const [field, ...rest] = token.split(':');
-            const value = rest.join(':');  // 处理值中可能包含的冒号
+            const value = rest.join(':'); // 处理值中可能包含的冒号
 
             // 处理否定
             if (field.startsWith('!')) {
@@ -81,7 +71,7 @@ class Parser {
                     type: TokenType.FIELD,
                     field: field.slice(1),
                     operator: 'NOT',
-                    value: this.parseValue(value)
+                    value: this.parseValue(value),
                 };
             }
 
@@ -93,7 +83,7 @@ class Parser {
                         type: TokenType.FIELD,
                         field,
                         operator: op,
-                        value: this.parseValue(value.slice(op.length))
+                        value: this.parseValue(value.slice(op.length)),
                     };
                 }
             }
@@ -104,7 +94,7 @@ class Parser {
                     type: TokenType.FIELD,
                     field,
                     operator: 'WILDCARD',
-                    value
+                    value,
                 };
             }
 
@@ -116,7 +106,7 @@ class Parser {
                     field,
                     operator: 'FUZZY',
                     value: val,
-                    threshold: Number(threshold) || undefined
+                    threshold: Number(threshold) || undefined,
                 };
             }
 
@@ -124,7 +114,7 @@ class Parser {
                 type: TokenType.FIELD,
                 field,
                 operator: '=',
-                value: this.parseValue(value)
+                value: this.parseValue(value),
             };
         }
 
@@ -174,7 +164,8 @@ class Parser {
 
             result.push(token);
 
-            if (nextToken &&
+            if (
+                nextToken &&
                 token.type !== TokenType.AND &&
                 token.type !== TokenType.OR &&
                 token.type !== TokenType.NOT &&
@@ -183,7 +174,8 @@ class Parser {
                 nextToken.type !== TokenType.OR &&
                 nextToken.type !== TokenType.NOT &&
                 nextToken.type !== TokenType.PARENTHESIS &&
-                nextToken.value !== ')') {
+                nextToken.value !== ')'
+            ) {
                 result.push({ type: TokenType.AND });
             }
         }
@@ -198,32 +190,44 @@ class Parser {
         const precedence = {
             [TokenType.NOT]: 3,
             [TokenType.AND]: 2,
-            [TokenType.OR]: 1
+            [TokenType.OR]: 1,
         };
 
         for (const token of tokens) {
             if (token.type === TokenType.FIELD || token.type === TokenType.TEXT) {
                 output.push(token);
-            }
-            else if (token.type === TokenType.NOT || token.type === TokenType.AND || token.type === TokenType.OR) {
-                while (operators.length > 0 &&
+            } else if (
+                token.type === TokenType.NOT ||
+                token.type === TokenType.AND ||
+                token.type === TokenType.OR
+            ) {
+                while (
+                    operators.length > 0 &&
                     operators[operators.length - 1].type !== TokenType.PARENTHESIS &&
-                    precedence[operators[operators.length - 1].type] >= precedence[token.type]) {
+                    precedence[operators[operators.length - 1].type] >= precedence[token.type]
+                ) {
                     output.push(operators.pop());
                 }
                 operators.push(token);
-            }
-            else if (token.type === TokenType.PARENTHESIS && token.value === '(') {
+            } else if (token.type === TokenType.PARENTHESIS && token.value === '(') {
                 operators.push(token);
-            }
-            else if (token.type === TokenType.PARENTHESIS && token.value === ')') {
-                while (operators.length > 0 && operators[operators.length - 1].type !== TokenType.PARENTHESIS) {
+            } else if (token.type === TokenType.PARENTHESIS && token.value === ')') {
+                while (
+                    operators.length > 0 &&
+                    operators[operators.length - 1].type !== TokenType.PARENTHESIS
+                ) {
                     output.push(operators.pop());
                 }
-                if (operators.length > 0 && operators[operators.length - 1].type === TokenType.PARENTHESIS) {
+                if (
+                    operators.length > 0 &&
+                    operators[operators.length - 1].type === TokenType.PARENTHESIS
+                ) {
                     operators.pop(); // 移除左括号
                     // 处理括号后的 NOT 操作符
-                    if (operators.length > 0 && operators[operators.length - 1].type === TokenType.NOT) {
+                    if (
+                        operators.length > 0 &&
+                        operators[operators.length - 1].type === TokenType.NOT
+                    ) {
                         output.push(operators.pop());
                     }
                 }
@@ -249,7 +253,7 @@ class Parser {
                 const operand = stack.pop();
                 stack.push({
                     type: TokenType.NOT,
-                    operand
+                    operand,
                 });
             } else if (token.type === TokenType.AND || token.type === TokenType.OR) {
                 if (stack.length < 2) throw new Error(`Invalid ${token.type} operation`);
@@ -258,7 +262,7 @@ class Parser {
                 stack.push({
                     type: token.type,
                     left,
-                    right
+                    right,
                 });
             } else {
                 stack.push(token);
@@ -274,7 +278,7 @@ export class QueryParser {
     constructor(options = {}) {
         this.options = {
             caseSensitive: false,
-            ...options
+            ...options,
         };
         this.parser = new Parser();
     }

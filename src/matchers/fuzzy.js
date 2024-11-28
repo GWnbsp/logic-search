@@ -1,11 +1,9 @@
-import leven from 'leven';
-
 export class FuzzyMatcher {
     constructor(options = {}) {
         this.options = {
             caseSensitive: false,
             fuzzyThreshold: 0.8,
-            ...options
+            ...options,
         };
     }
 
@@ -38,7 +36,9 @@ export class FuzzyMatcher {
     levenshteinDistance(text, pattern) {
         const m = text.length;
         const n = pattern.length;
-        const dp = Array(m + 1).fill().map(() => Array(n + 1).fill(0));
+        const dp = Array(m + 1)
+            .fill()
+            .map(() => Array(n + 1).fill(0));
 
         for (let i = 0; i <= m; i++) dp[i][0] = i;
         for (let j = 0; j <= n; j++) dp[0][j] = j;
@@ -49,9 +49,9 @@ export class FuzzyMatcher {
                     dp[i][j] = dp[i - 1][j - 1];
                 } else {
                     dp[i][j] = Math.min(
-                        dp[i - 1][j - 1] + 1,  // 替换
-                        dp[i][j - 1] + 1,      // 插入
-                        dp[i - 1][j] + 1       // 删除
+                        dp[i - 1][j - 1] + 1, // 替换
+                        dp[i][j - 1] + 1, // 插入
+                        dp[i - 1][j] + 1 // 删除
                     );
                 }
             }

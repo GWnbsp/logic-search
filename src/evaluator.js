@@ -16,9 +16,9 @@ export class QueryEvaluator {
                 brand: 1.0,
                 specs: 1.0,
                 price: 1.0,
-                ...options.weights
+                ...options.weights,
             },
-            ...options
+            ...options,
         };
 
         // 初始化匹配器
@@ -37,8 +37,11 @@ export class QueryEvaluator {
         // 处理特殊组合查询
         if (query.type === TokenType.AND) {
             // 对于评分和价格范围的组合查询，增加权重
-            const isRatingQuery = this.isFieldQuery(query.left, 'rating') || this.isFieldQuery(query.right, 'rating');
-            const isPriceQuery = this.isFieldQuery(query.left, 'priceRange') || this.isFieldQuery(query.right, 'priceRange');
+            const isRatingQuery =
+                this.isFieldQuery(query.left, 'rating') || this.isFieldQuery(query.right, 'rating');
+            const isPriceQuery =
+                this.isFieldQuery(query.left, 'priceRange') ||
+                this.isFieldQuery(query.right, 'priceRange');
 
             if (isRatingQuery && isPriceQuery) {
                 result.score *= 1.2; // 提高组合查询的权重
@@ -58,7 +61,7 @@ export class QueryEvaluator {
                 const right = this.evaluateNode(doc, node.right);
                 return {
                     match: left.match && right.match,
-                    score: (left.score + right.score) / 2
+                    score: (left.score + right.score) / 2,
                 };
             }
 
@@ -67,7 +70,7 @@ export class QueryEvaluator {
                 const right = this.evaluateNode(doc, node.right);
                 return {
                     match: left.match || right.match,
-                    score: Math.max(left.score, right.score)
+                    score: Math.max(left.score, right.score),
                 };
             }
 
@@ -75,7 +78,7 @@ export class QueryEvaluator {
                 const result = this.evaluateNode(doc, node.operand);
                 return {
                     match: !result.match,
-                    score: result.match ? 0 : 1
+                    score: result.match ? 0 : 1,
                 };
             }
 
@@ -84,7 +87,7 @@ export class QueryEvaluator {
                 const weight = this.options.weights[node.field] || 1;
                 return {
                     match: result.match,
-                    score: result.score * weight
+                    score: result.score * weight,
                 };
             }
 
@@ -134,12 +137,14 @@ export class QueryEvaluator {
             // 处理数组字段
             if (Array.isArray(value)) {
                 // 如果是数组，搜索所有元素
-                const results = value.map(item => {
-                    if (typeof item === 'object' && item !== null) {
-                        return this.getFieldValue(item, part);
-                    }
-                    return item;
-                }).filter(v => v !== undefined);
+                const results = value
+                    .map((item) => {
+                        if (typeof item === 'object' && item !== null) {
+                            return this.getFieldValue(item, part);
+                        }
+                        return item;
+                    })
+                    .filter((v) => v !== undefined);
 
                 // 如果找到任何匹配，返回第一个
                 return results.length > 0 ? results[0] : undefined;
@@ -163,12 +168,18 @@ export class QueryEvaluator {
 
         if (numericValue !== null && numericFieldValue !== null) {
             switch (operator) {
-                case '>': return { match: numericFieldValue > numericValue, score: 1 };
-                case '>=': return { match: numericFieldValue >= numericValue, score: 1 };
-                case '<': return { match: numericFieldValue < numericValue, score: 1 };
-                case '<=': return { match: numericFieldValue <= numericValue, score: 1 };
-                case '=': return { match: numericFieldValue === numericValue, score: 1 };
-                case 'NOT': return { match: numericFieldValue !== numericValue, score: 1 };
+                case '>':
+                    return { match: numericFieldValue > numericValue, score: 1 };
+                case '>=':
+                    return { match: numericFieldValue >= numericValue, score: 1 };
+                case '<':
+                    return { match: numericFieldValue < numericValue, score: 1 };
+                case '<=':
+                    return { match: numericFieldValue <= numericValue, score: 1 };
+                case '=':
+                    return { match: numericFieldValue === numericValue, score: 1 };
+                case 'NOT':
+                    return { match: numericFieldValue !== numericValue, score: 1 };
             }
         }
 
@@ -181,13 +192,21 @@ export class QueryEvaluator {
             const fieldLevel = fieldValue.length;
             const valueLevel = value.length;
             return {
-                match: operator === '>=' ? fieldLevel >= valueLevel :
-                    operator === '>' ? fieldLevel > valueLevel :
-                        operator === '<=' ? fieldLevel <= valueLevel :
-                            operator === '<' ? fieldLevel < valueLevel :
-                                operator === '=' ? fieldLevel === valueLevel :
-                                    operator === 'NOT' ? fieldLevel !== valueLevel : false,
-                score: 1
+                match:
+                    operator === '>='
+                        ? fieldLevel >= valueLevel
+                        : operator === '>'
+                            ? fieldLevel > valueLevel
+                            : operator === '<='
+                                ? fieldLevel <= valueLevel
+                                : operator === '<'
+                                    ? fieldLevel < valueLevel
+                                    : operator === '='
+                                        ? fieldLevel === valueLevel
+                                        : operator === 'NOT'
+                                            ? fieldLevel !== valueLevel
+                                            : false,
+                score: 1,
             };
         }
 
@@ -195,24 +214,25 @@ export class QueryEvaluator {
             case '=':
                 return {
                     match: this.exactMatcher.matches(strFieldValue, strValue),
-                    score: 1
+                    score: 1,
                 };
             case 'NOT':
                 return {
                     match: !this.exactMatcher.matches(strFieldValue, strValue),
-                    score: 1
+                    score: 1,
                 };
             case 'WILDCARD':
                 return {
                     match: this.wildcardMatcher.matches(strFieldValue, strValue),
-                    score: 0.8
+                    score: 0.8,
                 };
-            case 'FUZZY':
+            case 'FUZZY': {
                 const score = this.fuzzyMatcher.similarity(strFieldValue, strValue);
                 return {
                     match: score >= this.options.fuzzyThreshold,
-                    score: score
+                    score: score,
                 };
+            }
             default:
                 return { match: false, score: 0 };
         }
@@ -234,5 +254,57 @@ export class QueryEvaluator {
             if (result.match) return result;
         }
         return { match: false, score: 0 };
+    }
+
+    evaluateAnd(node) {
+        const leftResult = this.evaluate(node.left);
+        const rightResult = this.evaluate(node.right);
+        const result = leftResult.filter((doc) =>
+            rightResult.some((rightDoc) => rightDoc.id === doc.id)
+        );
+        return result;
+    }
+
+    evaluateOr(node) {
+        const leftResult = this.evaluate(node.left);
+        const rightResult = this.evaluate(node.right);
+        const result = [...new Set([...leftResult, ...rightResult])];
+        return result;
+    }
+
+    evaluateNot(node) {
+        const operandResult = this.evaluate(node.operand);
+        const result = this.documents.filter(
+            (doc) => !operandResult.some((opDoc) => opDoc.id === doc.id)
+        );
+        return result;
+    }
+
+    evaluatePhrase(node) {
+        const phrase = node.value;
+        const results = this.documents.filter((doc) => {
+            return this.matches(doc.text, phrase);
+        });
+        return results;
+    }
+
+    evaluateGroup(node) {
+        return this.evaluate(node.expression);
+    }
+
+    evaluateWildcard(node) {
+        const pattern = node.value;
+        const results = this.documents.filter((doc) => {
+            return this.matches(doc.text, pattern);
+        });
+        return results;
+    }
+
+    evaluateFuzzy(node) {
+        const term = node.value;
+        const results = this.documents.filter((doc) => {
+            return this.matches(doc.text, term);
+        });
+        return results;
     }
 }
